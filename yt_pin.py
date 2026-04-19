@@ -1,6 +1,5 @@
 import os
 import re
-import json
 import html
 import base64
 
@@ -9,10 +8,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-SCOPES = [
-    "https://www.googleapis.com/auth/youtube.force-ssl",
-    "https://www.googleapis.com/auth/gmail.modify",
-]
+GMAIL_SCOPES   = ["https://www.googleapis.com/auth/gmail.modify"]
+YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 
 TARGET_COMMENT = """▼지금 바로 수행기사로 취업해서 월 400 이상 벌고 싶다면 ▼
 https://youtu.be/ZjgoXC8p_Ps?si=ZSkeZhMJ4kMnHjty""".strip()
@@ -23,17 +20,18 @@ VIDEO_ID_RE = re.compile(r"https://www\.youtube\.com/watch\?v=([a-zA-Z0-9_-]+)")
 
 # ── 인증 ─────────────────────────────────────────────────────────────────────
 
-def get_credentials():
+def get_credentials(token_file, scopes):
+    """token_file과 scopes에 맞는 인증 객체 반환. 갱신 시 token_file 덮어씀."""
     creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    if os.path.exists(token_file):
+        creds = Credentials.from_authorized_user_file(token_file, scopes)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", scopes)
             creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as f:
+        with open(token_file, "w") as f:
             f.write(creds.to_json())
     return creds
 
@@ -88,6 +86,23 @@ def find_my_comment(youtube, video_id, target_text, my_channel_id):
     return False
 
 
+def is_shorts(youtube, video_id):
+    """영상 길이가 60초 이하면 Shorts로 판단."""
+    resp = youtube.videos().list(
+        part="contentDetails",
+        id=video_id,
+    ).execute()
+    items = resp.get("items", [])
+    if not items:
+        return False
+    duration = items[0]["contentDetails"]["duration"]
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
+    if not match:
+        return False
+    h, m, s = (int(x or 0) for x in match.groups())
+    return h * 3600 + m * 60 + s <= 60
+
+
 def add_comment(youtube, video_id, text):
     resp = youtube.commentThreads().insert(
         part="snippet",
@@ -133,12 +148,15 @@ def mark_as_read(gmail, msg_id):
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main():
-    creds = get_credentials()
-    youtube = build("youtube", "v3", credentials=creds)
-    gmail   = build("gmail",   "v1", credentials=creds)
+    # 계정별 별도 토큰 사용
+    gmail_creds   = get_credentials("gmail_token.json",   GMAIL_SCOPES)
+    youtube_creds = get_credentials("youtube_token.json", YOUTUBE_SCOPES)
+
+    gmail   = build("gmail",   "v1", credentials=gmail_creds)
+    youtube = build("youtube", "v3", credentials=youtube_creds)
 
     my_channel_id = get_my_channel_id(youtube)
-    print(f"채널 ID: {my_channel_id}")
+    print(f"YouTube 채널 ID: {my_channel_id}")
 
     # 읽지 않은 알림 이메일 조회
     query = f"from:{SENDER_FILTER} is:unread"
@@ -164,12 +182,15 @@ def main():
         print(f"  이메일 {msg_id}: 영상 {len(video_ids)}개 추출 → {video_ids}")
 
         for vid in video_ids:
+            if is_shorts(youtube, vid):
+                print(f"    [{vid}] Shorts — 건너뜀")
+                continue
             print(f"    [{vid}] 댓글 확인 중...")
             if find_my_comment(youtube, vid, TARGET_COMMENT, my_channel_id):
                 print(f"    [{vid}] 이미 존재 — 건너뜀")
             else:
                 add_comment(youtube, vid, TARGET_COMMENT)
-                print(f"    [{vid}] 고정 댓글 추가 완료 ✓")
+                print(f"    [{vid}] 댓글 추가 완료 ✓")
 
         mark_as_read(gmail, msg_id)
         print(f"  이메일 {msg_id} 읽음 처리 완료")

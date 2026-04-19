@@ -3,7 +3,7 @@ name: YouTube 고정 댓글 자동화
 on:
   schedule:
     - cron: "*/30 * * * *"
-  workflow_dispatch:  # 수동 실행 가능
+  workflow_dispatch:
 
 jobs:
   pin-comment:
@@ -24,18 +24,22 @@ jobs:
       - name: 인증 파일 복원
         run: |
           echo '${{ secrets.YOUTUBE_CLIENT_SECRET }}' > client_secret.json
-          echo '${{ secrets.YOUTUBE_TOKEN }}'         > token.json
+          echo '${{ secrets.GMAIL_TOKEN }}'           > gmail_token.json
+          echo '${{ secrets.YOUTUBE_TOKEN }}'         > youtube_token.json
 
       - name: 스크립트 실행
         run: python yt_pin.py
 
-      - name: 갱신된 token.json을 Secrets에 업데이트
+      - name: 갱신된 토큰을 Secrets에 업데이트
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          if [ -f token.json ]; then
-            TOKEN_VALUE=$(cat token.json)
-            gh secret set YOUTUBE_TOKEN --body "$TOKEN_VALUE" --repo ${{ github.repository }}
-            echo "token.json Secrets 업데이트 완료"
+          if [ -f gmail_token.json ]; then
+            gh secret set GMAIL_TOKEN --body "$(cat gmail_token.json)" --repo ${{ github.repository }}
+            echo "GMAIL_TOKEN 업데이트 완료"
+          fi
+          if [ -f youtube_token.json ]; then
+            gh secret set YOUTUBE_TOKEN --body "$(cat youtube_token.json)" --repo ${{ github.repository }}
+            echo "YOUTUBE_TOKEN 업데이트 완료"
           fi
