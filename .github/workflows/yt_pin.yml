@@ -27,18 +27,6 @@ jobs:
           echo '${{ secrets.GMAIL_TOKEN }}'    | base64 -d > gmail_token.json
           echo '${{ secrets.YOUTUBE_TOKEN }}'  | base64 -d > youtube_token.json
 
-      - name: 토큰 스코프 확인
-        run: |
-          python3 -c "
-          from google.oauth2.credentials import Credentials
-          import json
-          creds = Credentials.from_authorized_user_file('gmail_token.json')
-          print('Gmail scopes:', creds.scopes)
-          with open('gmail_token.json') as f:
-              d = json.load(f)
-          print('JSON scopes field:', d.get('scopes'))
-          "
-
       - name: 스크립트 실행
         run: python yt_pin.py
 
