@@ -24,8 +24,8 @@ jobs:
       - name: 인증 파일 복원
         run: |
           echo '${{ secrets.YOUTUBE_CLIENT_SECRET }}' > client_secret.json
-          echo '${{ secrets.GMAIL_TOKEN }}'           > gmail_token.json
-          echo '${{ secrets.YOUTUBE_TOKEN }}'         > youtube_token.json
+          echo '${{ secrets.GMAIL_TOKEN }}'    | base64 -d > gmail_token.json
+          echo '${{ secrets.YOUTUBE_TOKEN }}'  | base64 -d > youtube_token.json
 
       - name: 스크립트 실행
         run: python yt_pin.py
@@ -36,10 +36,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           if [ -f gmail_token.json ]; then
-            gh secret set GMAIL_TOKEN --body "$(cat gmail_token.json)" --repo ${{ github.repository }}
+            gh secret set GMAIL_TOKEN --body "$(base64 < gmail_token.json)" --repo ${{ github.repository }}
             echo "GMAIL_TOKEN 업데이트 완료"
           fi
           if [ -f youtube_token.json ]; then
-            gh secret set YOUTUBE_TOKEN --body "$(cat youtube_token.json)" --repo ${{ github.repository }}
+            gh secret set YOUTUBE_TOKEN --body "$(base64 < youtube_token.json)" --repo ${{ github.repository }}
             echo "YOUTUBE_TOKEN 업데이트 완료"
           fi
