@@ -2,10 +2,11 @@ name: YouTube 고정 댓글 자동화
 
 on:
   schedule:
-    - cron: "0 9 * * *"
-    - cron: "5 9 * * *"
-    - cron: "30 9 * * *"
-    - cron: "35 9 * * *"
+    - cron: "0 9 * * *"     # 18:00 KST
+    - cron: "30 9 * * *"    # 18:30 KST
+    - cron: "0 10 * * *"    # 19:00 KST
+    - cron: "30 10 * * *"   # 19:30 KST
+    - cron: "0 11 * * *"    # 20:00 KST
   workflow_dispatch:
 
 jobs:
