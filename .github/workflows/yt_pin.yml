@@ -46,6 +46,9 @@ jobs:
             echo "LAST_VIDEO_ID 업데이트 완료"
           fi
 
+      - name: 이메일 수신 대기 (30초)
+        run: sleep 30
+
       - name: 고정 댓글 추가
         run: python yt_pin.py
 
