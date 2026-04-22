@@ -90,21 +90,27 @@ def find_my_comment(youtube, video_id, target_text, my_channel_id):
     return False
 
 
-def is_shorts(youtube, video_id):
-    """영상 길이가 60초 이하면 Shorts로 판단."""
+def get_video_info(youtube, video_id):
+    """영상 제목, 게시일, Shorts 여부 반환."""
     resp = youtube.videos().list(
-        part="contentDetails",
+        part="contentDetails,snippet",
         id=video_id,
     ).execute()
     items = resp.get("items", [])
     if not items:
-        return False
-    duration = items[0]["contentDetails"]["duration"]
+        return {"is_shorts": False, "title": "", "published_at": ""}
+    item = items[0]
+    duration = item["contentDetails"]["duration"]
     match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
-    if not match:
-        return False
-    h, m, s = (int(x or 0) for x in match.groups())
-    return h * 3600 + m * 60 + s <= 60
+    seconds = 0
+    if match:
+        h, m, s = (int(x or 0) for x in match.groups())
+        seconds = h * 3600 + m * 60 + s
+    return {
+        "is_shorts": seconds <= 60,
+        "title": item["snippet"].get("title", ""),
+        "published_at": item["snippet"].get("publishedAt", "")[:10],
+    }
 
 
 def add_comment(youtube, video_id, text):
@@ -141,7 +147,7 @@ def get_email_body(gmail, msg_id):
     return extract(msg["payload"])
 
 
-def send_comment_notification(video_id, config):
+def send_comment_notification(video_id, title, published_at, config):
     email_cfg = config.get("email", {})
     sender = email_cfg.get("sender", "")
     password = email_cfg.get("password", "")
@@ -153,7 +159,12 @@ def send_comment_notification(video_id, config):
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = f"[{channel_name}] 고정 댓글 추가 완료"
-    body = f"다음 영상에 고정 댓글이 추가되었습니다.\n\n{video_url}"
+    body = (
+        f"다음 영상에 고정 댓글이 추가되었습니다.\n\n"
+        f"제목: {title}\n"
+        f"업로드 일자: {published_at}\n"
+        f"영상 링크: {video_url}"
+    )
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
     try:
@@ -213,7 +224,8 @@ def main():
         print(f"  이메일 {msg_id}: 영상 {len(video_ids)}개 추출 → {video_ids}")
 
         for vid in video_ids:
-            if is_shorts(youtube, vid):
+            info = get_video_info(youtube, vid)
+            if info["is_shorts"]:
                 print(f"    [{vid}] Shorts — 건너뜀")
                 continue
             print(f"    [{vid}] 댓글 확인 중...")
@@ -222,7 +234,7 @@ def main():
             else:
                 add_comment(youtube, vid, TARGET_COMMENT)
                 print(f"    [{vid}] 댓글 추가 완료 ✓")
-                send_comment_notification(vid, config)
+                send_comment_notification(vid, info["title"], info["published_at"], config)
 
         mark_as_read(gmail, msg_id)
         print(f"  이메일 {msg_id} 읽음 처리 완료")
