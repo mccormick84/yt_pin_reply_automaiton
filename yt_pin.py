@@ -6,6 +6,7 @@ import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import requests
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -177,6 +178,43 @@ def send_comment_notification(video_id, title, published_at, config):
         print(f"    → 댓글 알림 이메일 발송 실패: {e}")
 
 
+def update_notion_comment_flag(video_id, config):
+    token = config.get("notion_token", "")
+    database_id = config.get("notion_database_id", "")
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    resp = requests.post(
+        f"https://api.notion.com/v1/databases/{database_id}/query",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28",
+        },
+        json={"filter": {"property": "영상", "url": {"equals": video_url}}},
+        timeout=30,
+    )
+    results = resp.json().get("results", [])
+    if not results:
+        print(f"    → Notion 페이지 없음 — 건너뜀")
+        return
+
+    page_id = results[0]["id"]
+    resp = requests.patch(
+        f"https://api.notion.com/v1/pages/{page_id}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28",
+        },
+        json={"properties": {"고정댓글": {"checkbox": True}}},
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        print(f"    → Notion 고정댓글 체크 완료")
+    else:
+        print(f"    → Notion 업데이트 실패 ({resp.status_code}): {resp.text}")
+
+
 def mark_as_read(gmail, msg_id):
     gmail.users().messages().modify(
         userId="me",
@@ -234,6 +272,7 @@ def main():
             else:
                 add_comment(youtube, vid, TARGET_COMMENT)
                 print(f"    [{vid}] 댓글 추가 완료 ✓")
+                update_notion_comment_flag(vid, config)
                 send_comment_notification(vid, info["title"], info["published_at"], config)
 
         mark_as_read(gmail, msg_id)
