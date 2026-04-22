@@ -2,6 +2,10 @@ import os
 import re
 import html
 import base64
+import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -137,6 +141,31 @@ def get_email_body(gmail, msg_id):
     return extract(msg["payload"])
 
 
+def send_comment_notification(video_id, config):
+    email_cfg = config.get("email", {})
+    sender = email_cfg.get("sender", "")
+    password = email_cfg.get("password", "")
+    recipients = email_cfg.get("recipients", [])
+    channel_name = config.get("channel_name", "")
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    msg = MIMEMultipart()
+    msg["From"] = sender
+    msg["To"] = ", ".join(recipients)
+    msg["Subject"] = f"[{channel_name}] 고정 댓글 추가 완료"
+    body = f"다음 영상에 고정 댓글이 추가되었습니다.\n\n{video_url}"
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    try:
+        with smtplib.SMTP(email_cfg["smtp_host"], email_cfg["smtp_port"]) as server:
+            server.starttls()
+            server.login(sender, password)
+            server.sendmail(sender, recipients, msg.as_string())
+        print(f"    → 댓글 알림 이메일 발송 완료")
+    except Exception as e:
+        print(f"    → 댓글 알림 이메일 발송 실패: {e}")
+
+
 def mark_as_read(gmail, msg_id):
     gmail.users().messages().modify(
         userId="me",
@@ -148,7 +177,9 @@ def mark_as_read(gmail, msg_id):
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main():
-    # 계정별 별도 토큰 사용
+    with open("monitor_config.json") as f:
+        config = json.load(f)
+
     gmail_creds   = get_credentials("gmail_token.json",   GMAIL_SCOPES)
     youtube_creds = get_credentials("youtube_token.json", YOUTUBE_SCOPES)
 
@@ -191,6 +222,7 @@ def main():
             else:
                 add_comment(youtube, vid, TARGET_COMMENT)
                 print(f"    [{vid}] 댓글 추가 완료 ✓")
+                send_comment_notification(vid, config)
 
         mark_as_read(gmail, msg_id)
         print(f"  이메일 {msg_id} 읽음 처리 완료")
