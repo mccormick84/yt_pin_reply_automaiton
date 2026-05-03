@@ -278,6 +278,8 @@ def main():
         mark_as_read(gmail, msg_id)
         print(f"  이메일 {msg_id} 읽음 처리 완료")
 
+    with open("processed_today.txt", "w") as f:
+        f.write("done")
     print("완료")
 
 

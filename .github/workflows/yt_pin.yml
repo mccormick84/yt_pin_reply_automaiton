@@ -14,18 +14,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: 오늘 이미 처리했는지 확인
+        id: check
+        env:
+          LAST_PROCESSED_DATE: ${{ secrets.LAST_PROCESSED_DATE }}
+        run: |
+          TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d)
+          if [ "$LAST_PROCESSED_DATE" = "$TODAY" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "오늘($TODAY) 이미 처리 완료 — 건너뜀"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: 코드 체크아웃
+        if: steps.check.outputs.skip == 'false'
         uses: actions/checkout@v4
 
       - name: Python 설치
+        if: steps.check.outputs.skip == 'false'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: 의존성 설치
+        if: steps.check.outputs.skip == 'false'
         run: pip install -r requirements.txt
 
       - name: 인증 파일 복원
+        if: steps.check.outputs.skip == 'false'
         run: |
           echo '${{ secrets.YOUTUBE_CLIENT_SECRET }}' > client_secret.json
           echo '${{ secrets.GMAIL_TOKEN }}'   | base64 -d > gmail_token.json
@@ -33,12 +50,13 @@ jobs:
           echo '${{ secrets.MONITOR_CONFIG }}' | base64 -d > monitor_config.json
 
       - name: 새 영상 감지 및 노션/이메일 알림
+        if: steps.check.outputs.skip == 'false'
         env:
           LAST_VIDEO_ID: ${{ secrets.LAST_VIDEO_ID }}
         run: python yt_monitor.py
 
       - name: LAST_VIDEO_ID 업데이트
-        if: always()
+        if: steps.check.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -48,16 +66,23 @@ jobs:
           fi
 
       - name: 이메일 수신 대기 (30초)
+        if: steps.check.outputs.skip == 'false'
         run: sleep 30
 
       - name: 고정 댓글 추가
+        if: steps.check.outputs.skip == 'false'
         run: python yt_pin.py
 
-      - name: 갱신된 토큰을 Secrets에 업데이트
-        if: always()
+      - name: 처리 날짜 및 토큰 업데이트
+        if: steps.check.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
+          if [ -f processed_today.txt ]; then
+            TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d)
+            gh secret set LAST_PROCESSED_DATE --body "$TODAY" --repo ${{ github.repository }}
+            echo "LAST_PROCESSED_DATE=$TODAY 업데이트 완료"
+          fi
           if [ -f gmail_token.json ]; then
             gh secret set GMAIL_TOKEN --body "$(base64 < gmail_token.json | tr -d '\n')" --repo ${{ github.repository }}
             echo "GMAIL_TOKEN 업데이트 완료"
