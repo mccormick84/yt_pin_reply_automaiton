@@ -187,7 +187,11 @@ def main():
         if add_to_notion(video, notion_token, notion_db_id):
             print(f"  → Notion 추가 완료")
 
-    send_email(list(reversed(new_videos)), config)
+    regular_videos = [v for v in new_videos if v["type"] == "일반"]
+    if regular_videos:
+        send_email(list(reversed(regular_videos)), config)
+    else:
+        print("일반 영상 없음 — 이메일 발송 건너뜀")
 
     with open(STATE_FILE, "w") as f:
         f.write(latest_id)
